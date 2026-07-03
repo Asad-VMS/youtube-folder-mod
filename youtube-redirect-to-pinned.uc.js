@@ -1,14 +1,10 @@
-// youtube-redirect-to-pinned.uc.mjs
+// youtube-redirect-to-pinned.uc.js
 // Redirects any new tab that navigates to YouTube into your existing
-// pinned YouTube tab, instead of opening a separate tab.
-//
-// Requires fx-autoconfig (already set up if you're using Sine).
-// Install: drop this file into your profile's chrome/JS folder,
-// then import it from your import.uc.mjs (or JS/import.mjs) file:
-//   import "./youtube-redirect-to-pinned.uc.mjs";
-// Restart Zen afterwards.
+// pinned YouTube folder, instead of opening a separate tab.
+// Loaded as a Sine mod via theme.json.
 
 (function () {
+  const TAG = "[YTFolderMod]";
   const YOUTUBE_HOSTS = new Set([
     "www.youtube.com",
     "youtube.com",
@@ -16,12 +12,15 @@
     "youtu.be",
   ]);
 
+  console.log(TAG, "script loaded");
+
   function findPinnedYoutubeTab(excludeTab) {
     for (const tab of gBrowser.tabs) {
       if (tab === excludeTab) continue;
       if (!tab.pinned) continue;
       try {
         const host = tab.linkedBrowser?.currentURI?.host;
+        console.log(TAG, "checking pinned tab host:", host);
         if (host && YOUTUBE_HOSTS.has(host)) {
           return tab;
         }
@@ -33,38 +32,43 @@
   }
 
   function moveTabIntoFolder(newTab, pinnedTab) {
-    // The folder is the enclosing tab group of the pinned "home" tab.
     const folder = pinnedTab.group;
+    console.log(TAG, "pinnedTab.group =", folder, "tagName:", folder?.tagName);
 
     if (!newTab.pinned) {
       gBrowser.pinTab(newTab);
+      console.log(TAG, "pinned the new tab");
     }
 
     if (folder && typeof folder.addTabs === "function") {
-      // Native Firefox/Zen tab-group API
+      console.log(TAG, "using folder.addTabs()");
       folder.addTabs([newTab]);
     } else if (folder && typeof gBrowser.moveTabToGroup === "function") {
+      console.log(TAG, "using gBrowser.moveTabToGroup()");
       gBrowser.moveTabToGroup(newTab, folder);
     } else if (folder) {
-      // Fallback: reparent the tab's DOM node right after the pinned tab
+      console.log(TAG, "using DOM insertBefore fallback");
       try {
         folder.insertBefore(newTab, pinnedTab.nextSibling);
       } catch (e) {
-        console.error("youtube-redirect-to-pinned: DOM fallback failed", e);
+        console.error(TAG, "DOM fallback failed", e);
       }
+    } else {
+      console.warn(TAG, "no folder/group found on pinned tab — cannot nest");
     }
 
-    // Put the new tab right after the pinned home tab, then select it
     try {
       gBrowser.moveTabTo(newTab, pinnedTab._tPos + 1);
-    } catch (e) {}
+    } catch (e) {
+      console.warn(TAG, "moveTabTo failed", e);
+    }
     gBrowser.selectedTab = newTab;
   }
 
   function handleTabOpen(event) {
     const newTab = event.target;
+    console.log(TAG, "TabOpen fired, pinned already?", newTab.pinned);
 
-    // Don't touch tabs that are already pinned/folder tabs themselves
     if (newTab.pinned) return;
 
     const browser = newTab.linkedBrowser;
@@ -85,17 +89,21 @@
         } catch (e) {
           return;
         }
+        console.log(TAG, "new tab navigated to host:", host);
 
         if (YOUTUBE_HOSTS.has(host)) {
           const pinnedTab = findPinnedYoutubeTab(newTab);
+          console.log(TAG, "found pinned YouTube tab?", !!pinnedTab);
           if (pinnedTab) {
             try {
               moveTabIntoFolder(newTab, pinnedTab);
+              console.log(TAG, "moveTabIntoFolder completed");
             } catch (e) {
-              console.error("youtube-redirect-to-pinned: failed to move tab into folder", e);
+              console.error(TAG, "failed to move tab into folder", e);
             }
+          } else {
+            console.warn(TAG, "no pinned YouTube tab found in this workspace");
           }
-          // Stop listening either way once we've resolved a YouTube URL
           try {
             browser.removeProgressListener(listener);
           } catch (e) {}
@@ -109,11 +117,9 @@
         Ci.nsIWebProgress.NOTIFY_LOCATION
       );
     } catch (e) {
-      console.error("youtube-redirect-to-pinned: could not attach listener", e);
+      console.error(TAG, "could not attach listener", e);
     }
 
-    // Safety net: detach listener after 15s so we don't leak listeners
-    // on tabs that never end up navigating to YouTube.
     setTimeout(() => {
       try {
         browser.removeProgressListener(listener);
@@ -123,11 +129,13 @@
 
   if (typeof gBrowser !== "undefined" && gBrowser.tabContainer) {
     gBrowser.tabContainer.addEventListener("TabOpen", handleTabOpen);
+    console.log(TAG, "listener attached immediately");
   } else {
     window.addEventListener(
       "load",
       () => {
         gBrowser.tabContainer.addEventListener("TabOpen", handleTabOpen);
+        console.log(TAG, "listener attached after load");
       },
       { once: true }
     );
