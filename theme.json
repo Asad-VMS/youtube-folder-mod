@@ -1,0 +1,23 @@
+{
+  "id": "youtube-folder-redirect",
+  "name": "YouTube Folder Redirect",
+  "description": "Sends new YouTube tabs into your pinned YouTube folder instead of opening a separate tab",
+  "scripts": {
+    "youtube-redirect-to-pinned.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
+    }
+  },
+  "author": "Asad",
+  "version": "1.0.0",
+  "tags": [
+    "Zen Browser",
+    "Tabs",
+    "Folders",
+    "YouTube"
+  ],
+  "createdAt": "2026-07-03",
+  "updatedAt": "2026-07-03",
+  "fork": ["zen"]
+}
