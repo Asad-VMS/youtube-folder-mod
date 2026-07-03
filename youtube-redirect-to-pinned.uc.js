@@ -1,143 +1,153 @@
 // youtube-redirect-to-pinned.uc.js
-// Redirects any new tab that navigates to YouTube into your existing
-// pinned YouTube folder, instead of opening a separate tab.
-// Loaded as a Sine mod via theme.json.
+// Automatically moves any newly opened YouTube tab into the existing
+// "YouTube" Zen folder.
+//
+// Zen Browser 1.21.5b
+// Sine Mod
 
 (function () {
-  const TAG = "[YTFolderMod]";
-  const YOUTUBE_HOSTS = new Set([
-    "www.youtube.com",
-    "youtube.com",
-    "m.youtube.com",
-    "youtu.be",
-  ]);
+    const TAG = "[YTFolderMod]";
 
-  console.log(TAG, "script loaded");
+    const YOUTUBE_HOSTS = new Set([
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+    ]);
 
-  function findPinnedYoutubeTab(excludeTab) {
-    for (const tab of gBrowser.tabs) {
-      if (tab === excludeTab) continue;
-      if (!tab.pinned) continue;
-      try {
-        const host = tab.linkedBrowser?.currentURI?.host;
-        console.log(TAG, "checking pinned tab host:", host);
-        if (host && YOUTUBE_HOSTS.has(host)) {
-          return tab;
-        }
-      } catch (e) {
-        // ignore tabs without a resolvable URI (e.g. blank pinned tabs)
-      }
-    }
-    return null;
-  }
+    console.log(TAG, "Loaded.");
 
-  function moveTabIntoFolder(newTab, pinnedTab) {
-    const folder = pinnedTab.group;
-    console.log(TAG, "pinnedTab.group =", folder, "tagName:", folder?.tagName);
+    function findYoutubeFolder() {
+        const folders =
+            gBrowser.tabContainer.querySelectorAll("zen-folder");
 
-    if (!newTab.pinned) {
-      gBrowser.pinTab(newTab);
-      console.log(TAG, "pinned the new tab");
-    }
+        console.log(TAG, "Folders found:", folders.length);
 
-    if (folder && typeof folder.addTabs === "function") {
-      console.log(TAG, "using folder.addTabs()");
-      folder.addTabs([newTab]);
-    } else if (folder && typeof gBrowser.moveTabToGroup === "function") {
-      console.log(TAG, "using gBrowser.moveTabToGroup()");
-      gBrowser.moveTabToGroup(newTab, folder);
-    } else if (folder) {
-      console.log(TAG, "using DOM insertBefore fallback");
-      try {
-        folder.insertBefore(newTab, pinnedTab.nextSibling);
-      } catch (e) {
-        console.error(TAG, "DOM fallback failed", e);
-      }
-    } else {
-      console.warn(TAG, "no folder/group found on pinned tab — cannot nest");
-    }
+        for (const folder of folders) {
+            const label =
+                folder.label ??
+                folder.getAttribute("label") ??
+                "";
 
-    try {
-      gBrowser.moveTabTo(newTab, pinnedTab._tPos + 1);
-    } catch (e) {
-      console.warn(TAG, "moveTabTo failed", e);
-    }
-    gBrowser.selectedTab = newTab;
-  }
+            console.log(TAG, "Folder:", label);
 
-  function handleTabOpen(event) {
-    const newTab = event.target;
-    console.log(TAG, "TabOpen fired, pinned already?", newTab.pinned);
-
-    if (newTab.pinned) return;
-
-    const browser = newTab.linkedBrowser;
-    if (!browser) return;
-
-    const listener = {
-      QueryInterface: ChromeUtils.generateQI([
-        "nsIWebProgressListener",
-        "nsISupportsWeakReference",
-      ]),
-      onLocationChange(aBrowser, aWebProgress, aRequest, aLocation) {
-        if (aBrowser !== browser) return;
-        if (!aWebProgress.isTopLevel) return;
-
-        let host;
-        try {
-          host = aLocation.host;
-        } catch (e) {
-          return;
-        }
-        console.log(TAG, "new tab navigated to host:", host);
-
-        if (YOUTUBE_HOSTS.has(host)) {
-          const pinnedTab = findPinnedYoutubeTab(newTab);
-          console.log(TAG, "found pinned YouTube tab?", !!pinnedTab);
-          if (pinnedTab) {
-            try {
-              moveTabIntoFolder(newTab, pinnedTab);
-              console.log(TAG, "moveTabIntoFolder completed");
-            } catch (e) {
-              console.error(TAG, "failed to move tab into folder", e);
+            if (label.toLowerCase() === "youtube") {
+                console.log(TAG, "Matched YouTube folder.");
+                return folder;
             }
-          } else {
-            console.warn(TAG, "no pinned YouTube tab found in this workspace");
-          }
-          try {
-            browser.removeProgressListener(listener);
-          } catch (e) {}
         }
-      },
-    };
 
-    try {
-      browser.addProgressListener(
-        listener,
-        Ci.nsIWebProgress.NOTIFY_LOCATION
-      );
-    } catch (e) {
-      console.error(TAG, "could not attach listener", e);
+        console.warn(TAG, "YouTube folder not found.");
+        return null;
     }
 
-    setTimeout(() => {
-      try {
-        browser.removeProgressListener(listener);
-      } catch (e) {}
-    }, 15000);
-  }
+    function moveTabIntoYoutubeFolder(tab) {
+        const folder = findYoutubeFolder();
 
-  if (typeof gBrowser !== "undefined" && gBrowser.tabContainer) {
-    gBrowser.tabContainer.addEventListener("TabOpen", handleTabOpen);
-    console.log(TAG, "listener attached immediately");
-  } else {
-    window.addEventListener(
-      "load",
-      () => {
-        gBrowser.tabContainer.addEventListener("TabOpen", handleTabOpen);
-        console.log(TAG, "listener attached after load");
-      },
-      { once: true }
-    );
-  }
+        if (!folder)
+            return;
+
+        try {
+            if (!tab.pinned) {
+                gBrowser.pinTab(tab);
+                console.log(TAG, "Pinned tab.");
+            }
+
+            if (typeof folder.addTabs === "function") {
+                console.log(TAG, "Calling folder.addTabs()");
+                folder.addTabs([tab]);
+            } else {
+                console.error(TAG, "folder.addTabs does not exist!", folder);
+            }
+
+            gBrowser.selectedTab = tab;
+        } catch (e) {
+            console.error(TAG, "Failed moving tab:", e);
+        }
+    }
+
+    function watchTab(tab) {
+        const browser = tab.linkedBrowser;
+        if (!browser)
+            return;
+
+        const listener = {
+            QueryInterface: ChromeUtils.generateQI([
+                "nsIWebProgressListener",
+                "nsISupportsWeakReference",
+            ]),
+
+            onLocationChange(aBrowser, webProgress, request, location) {
+                if (aBrowser !== browser)
+                    return;
+
+                if (!webProgress.isTopLevel)
+                    return;
+
+                let host = "";
+
+                try {
+                    host = location.host;
+                } catch (_) {
+                    return;
+                }
+
+                console.log(TAG, "Visited:", host);
+
+                if (YOUTUBE_HOSTS.has(host)) {
+                    console.log(TAG, "YouTube detected.");
+
+                    moveTabIntoYoutubeFolder(tab);
+
+                    try {
+                        browser.removeProgressListener(listener);
+                    } catch (_) {}
+                }
+            },
+        };
+
+        browser.addProgressListener(
+            listener,
+            Ci.nsIWebProgress.NOTIFY_LOCATION
+        );
+
+        setTimeout(() => {
+            try {
+                browser.removeProgressListener(listener);
+            } catch (_) {}
+        }, 15000);
+    }
+
+    function onTabOpen(event) {
+        const tab = event.target;
+
+        if (tab.pinned)
+            return;
+
+        console.log(TAG, "New tab opened.");
+
+        watchTab(tab);
+    }
+
+    function init() {
+        if (!gBrowser || !gBrowser.tabContainer) {
+            console.error(TAG, "gBrowser not ready.");
+            return;
+        }
+
+        gBrowser.tabContainer.addEventListener(
+            "TabOpen",
+            onTabOpen
+        );
+
+        console.log(TAG, "Listening for new tabs.");
+    }
+
+    if (document.readyState === "complete") {
+        init();
+    } else {
+        window.addEventListener("load", init, {
+            once: true,
+        });
+    }
 })();
